@@ -1,131 +1,297 @@
-import cv2
-import os
-import sys
-import glob
-import numpy
-import matplotlib.pyplot as plt
-from enhance import image_enhance
-from skimage.morphology import skeletonize, thin
+from func import *
 
 
-def removedot(invertThin):
-    temp0 = numpy.array(invertThin[:])
-    temp0 = numpy.array(temp0)
-    temp1 = temp0/255
-    temp2 = numpy.array(temp1)
-    temp3 = numpy.array(temp2)
+dataset_training = "/dataset/Maldroid2020_train.csv"
+target = 'Class'
 
-    enhanced_img = numpy.array(temp0)
-    filter0 = numpy.zeros((10,10))
-    W,H = temp0.shape[:2]
-    filtersize = 6
+# load data phase
+data = load(dataset_training)
+if data is not None:
+    print("Just ended to load your data from the file submitted!")
+    print()
+else:
+    print("Got an error during loading of data provided!")
+    sys.exit(0)
 
-    for i in range(W - filtersize):
-        for j in range(H - filtersize):
-            filter0 = temp1[i:i + filtersize,j:j + filtersize]
+shape = data.shape              
+print("Dataset size is:", shape, "which means", shape[0], "examples x", shape[1], "attributes")
+print("Legend: examples = rows")
+print("Legend: attributes = columns")
+print()
 
-            flag = 0
-            if sum(filter0[:,0]) == 0:
-                flag +=1
-            if sum(filter0[:,filtersize - 1]) == 0:
-                flag +=1
-            if sum(filter0[0,:]) == 0:
-                flag +=1
-            if sum(filter0[filtersize - 1,:]) == 0:
-                flag +=1
-            if flag > 3:
-                temp2[i:i + filtersize, j:j + filtersize] = numpy.zeros((filtersize, filtersize))
+print("Just a quick test to see if you loaded correct data:")
+print(data.head())              
+print()
 
-    return temp2
+print("These are the columns of your dataset:")
+print(data.columns)
 
-def get_descriptors(img):
-	clahe = cv2.createCLAHE(clipLimit = 2.0, tileGridSize = (8,8))
-	img = clahe.apply(img)
-	img = image_enhance.image_enhance(img)
-	img = numpy.array(img, dtype=numpy.uint8)
+# pre-elaboration phase
+cols = list(data.columns.values)                     
+preElaborationData(data, cols)                      
 
-	# Threshold
-	ret, img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+print("Following you can evaluate on the screen the plot of your dataset with a setup of 5 bins. (Close to go ahead).")
+preElaborationClass(data, target)
+print()
 
-	# Normalize to 0 and 1 range
-	img[img == 255] = 1
+print("In this step you can evaluate on the screen different boxplots. These will be saved into the folder: 'ana_dati_maldroid' folder, then sub-folder 'boxplots'")
+preBoxPlotAnalysisData(data, cols, target)              
+print()
 
-	#Thinning
-	skeleton = skeletonize(img)
-	skeleton = numpy.array(skeleton, dtype = numpy.uint8)
-	skeleton = removedot(skeleton)
+# feature evaluation phase with mutual info rank - feature relevance study
+print("This is a list of attributes in the dataset: ")
+independentList = cols[0:data.shape[1] - 1]
+print()
+print("Determining the feature evaluation with Mutual Info Rank of original training set provided..")
+rankMI = mutualInfoRank(data, independentList, target)
+print(rankMI)
+print()
 
-	# Harris corners
-	harris_corners = cv2.cornerHarris(img, 3, 3, 0.04)
-	harris_normalized = cv2.normalize(harris_corners, 0, 255, norm_type = cv2.NORM_MINMAX, dtype = cv2.CV_32FC1)
-	threshold_harris = 125
+# feature selection phase - Select the best N features
+print("Moving on feature selection step, grabbing top N features ranked according to MI.")
+N = 10
+toplist = topFeatureSelect(rankMI, N)
+toplist.append(target)
+print("The top list is above here:")
+print(toplist)
 
-	# Extract keypoints
-	keypoints = []
-	for x in range(0, harris_normalized.shape[0]):
-		for y in range(0, harris_normalized.shape[1]):
-			if harris_normalized[x][y] > threshold_harris:
-				keypoints.append(cv2.KeyPoint(y, x, 1))
+# Selecting the best N features
+selectedMIData = data.loc[:, toplist]              
+print()
+print("After last manipulation your actual dataset dimension is:", selectedMIData.shape, "which means", selectedMIData.shape[0], "examples x", selectedMIData.shape[1], "columns")
+print()
+print("This is the head of your data:")
+print(selectedMIData.head(n = 15))
+print()
+print("Actual attributes are these:")
+print(selectedMIData.columns)
+print()
 
-	# Define descriptor
-	orb = cv2.ORB_create()
+# scaling phase with minmax algo + feature evaluation with mutual info rank on the scaled !training set!
+scaled_data = data.copy(deep = True)            
 
-	# Compute descriptors
-	_, des = orb.compute(img, keypoints)
-	return (keypoints, des);
+scaler = MinMaxScaler()
+scaled_data[independentList] = scaler.fit_transform(scaled_data[independentList])
+print("The MinMaxScaler is used and now it's time to determining the feature evaluation with Mutual Info Rank of scaled dataset provided..")
+rank_MI_scaled = mutualInfoRank(scaled_data, independentList, target)
+print(rank_MI_scaled)
+print()
 
+toplist_scaled = topFeatureSelect(rank_MI_scaled, N)
+toplist_scaled.append(target)
+print("The top list of scaled dataset is above here:")
+print(toplist_scaled)
+print()
 
-def main():
-	# In this way you can provide 2 parameters (fingerprints) in input. In any case, two images 
-	# A and B are compared and then in output you can found degree of similiarities. In this
-	# loop every image (image_name) into the database folder will be compared with your sample 
-	# (image_name2)		
+# New dataset after applying Mutual Information (feature selection). Label is appended to the dataset as well
+selectedMIdata_scaled = scaled_data.loc[:, toplist_scaled]
 
-	#image_name = sys.argv[1]
-	#img1 = cv2.imread("database/" + image_name, cv2.IMREAD_GRAYSCALE)
-	#kp1, des1 = get_descriptors(img1)
+print("After last manipulation your actual scaled dataset dimension is:", selectedMIdata_scaled.shape, "which means", selectedMIdata_scaled.shape[0], "examples x", selectedMIdata_scaled.shape[1], "columns")
+print()
+print('Top list MI scaled: \n')
+print(selectedMIdata_scaled.head(n = 15))
+print()
+print("Actual attributes are these:")
+print(selectedMIdata_scaled.columns)
+print()
 
-	#image_name2 = sys.argv[2]
-	#img2 = cv2.imread("database/" + image_name2, cv2.IMREAD_GRAYSCALE)
-	#kp2, des2 = get_descriptors(img2)
+# PCA phase - notice: remove target = "Label" from independentList
+print("Let's determine Principal Components List (PCA) over your dataset:")
+print()
 
-	for image_name in glob.glob("database/YOUR_FINGERPRINT_DB_PATH/*.bmp"):
-		img1 = cv2.imread(image_name, cv2.IMREAD_GRAYSCALE)
-		kp1, des1 = get_descriptors(img1)
-		
-		image_name2 = 'database/YOUR_FINGERPRINT_DB_PATH/sample_reference.bmp'
-		img2 = cv2.imread(image_name2, cv2.IMREAD_GRAYSCALE)
-		kp2, des2 = get_descriptors(img2)
+X = data.loc[:, independentList]                      
+y = data[target]
+pca, pcalist = pca(X)
+pcaData = applyPCA(X, pca, pcalist)
+# The label column was added back
+pcaData.insert(loc = len(independentList), column = target, value = y, allow_duplicates = True)
 
-		# Matching between descriptors
-		bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-		matches = sorted(bf.match(des1, des2), key= lambda match:match.distance)
+print("These are the principal components from given dataset:")
+print(pcaData.columns.values)
+print()
+print("Quick check after computation:")
+print(pcaData.head())
+print()
+print("After last manipulation your actual dataset dimension is:", pcaData.shape, "which means", pcaData.shape[0], "examples x", pcaData.shape[1], "columns")
+print()
 
-		# Plot keypoints
-		img4 = cv2.drawKeypoints(img1, kp1, outImage = None)
-		img5 = cv2.drawKeypoints(img2, kp2, outImage = None)
-		f, axarr = plt.subplots(1,2)
-		axarr[0].imshow(img4)
-		axarr[1].imshow(img5)
-		plt.show()
+print("Listing", N, "top important principal components from given data frame:")
+pcaDataN_top = selectPCAData(pcaData, N)
+print(pcaDataN_top)
+print()
 
-		# Plot matches
-		img3 = cv2.drawMatches(img1, kp1, img2, kp2, matches, flags = 2, outImg = None)
-		plt.imshow(img3)
-		plt.show()
+# Best setup for our decision tree
+# Stratified K-fold cross validation phase  : notice, seed is defined on "func.py"
+folds = 5                               # Number of folds for cross-validation
+print("Applying Stratified K-fold cross validation to original dataset and subdivide our dataset in", folds, "folds:")
+X = data.loc[:, independentList]
+y = data[target]
+ListXTrain, ListXTest, ListYTrain, ListYTest = stratifiedKfold(X, y, folds, seed)
+print()
 
-		# Calculate score
-		for match in matches:
-			score += match.distance
-		score_threshold = 33
-		if score/len(matches) < score_threshold:
-			print("Fingerprint matches.")
-		else:
-			print("Fingerprint does not match.")
+independent_PCA = list(pcaData.columns.values)
+independent_PCA.remove(target)
 
+Xpca = pcaData.loc[:, independent_PCA]
+Ypca = pcaData[target]
 
-if __name__ == "__main__":
-	try:
-		main()
-	except:
-		raise
+ListXPCATrain, ListXPCATest, ListYPCATrain, ListYPCATest = stratifiedKfold(Xpca, Ypca, folds,
+                                                                           seed)  # Stratified 5-fold cross validation on PCA train dataset
+# Decision tree learner on original training set as exercise
+# Passing to this instance df_clf_X that is a copy of original dataframe - this algo use C4.5 with gini as criterion by default
+print()
+print("Decision tree learner on original dataset submitted and plotting on video. (Close to go ahead).")
+tree = decisionTreeLearner(X, y, 'entropy', 500)
+showTree(tree)
+print()
+
+bestCriterionMI, bestNMI, bestEvalMI = determineDecisionTreekFoldConfiguration(ListXTrain, ListXTest, ListYTrain, ListYTest, rankMI)
+print('Feature Ranking by Mutual Info:', 'Best criterion is:', bestCriterionMI, 'and best N is:', bestNMI, 'and Best CV F1 is:', bestEvalMI)
+print()
+
+# Feature evaluation PCA phase
+tmp = []
+for c in pcalist:
+    tmp.append(1.0)
+res = dict( zip(pcalist, tmp))
+rankPCA = sorted( res.items(), key = lambda kv: kv[1], reverse = True)
+bestCriterionPCA, bestNPCA, bestEvalPCA = determineDecisionTreekFoldConfiguration(ListXPCATrain, ListXPCATest, ListYPCATrain, ListYPCATest, rankPCA)
+print('Feature Ranking by PCA:', 'Best criterion is:', bestCriterionPCA, 'and best N is:', bestNPCA, 'and Best CV F1 is:', bestEvalPCA)
+print()
+
+# Final evaluation phase - Confusion matrix and evaluation report
+dataset_testing = "/dataset/Maldroid2020_test.csv"
+data_test = load(dataset_testing)
+
+if data_test is not None:
+    print("Just ended to load your data from the file submitted!")
+    print()
+else:
+    print("Got an error during loading of data provided!")
+    sys.exit(0)
+
+preElaborationClass(data_test, target)
+
+y_true = data_test[target]
+
+shape = data_test.shape
+print("Dataset test size is:", shape, "which means", shape[0], "examples x", shape[1], "attributes")
+print()
+
+print("Just a quick test to see if you loaded correct data:")
+print(data_test.head())
+print()
+
+# Training decision tree phase - Feature selection with Mutual info
+data_train_MI = data.loc[:, topFeatureSelect(rankMI, bestNMI)]
+print("Shape of data_train_MI:", data_train_MI.shape, "which means", data_train_MI.shape[0], "examples x", data_train_MI.shape[1], "columns")
+print()
+data_test_MI = data_test.loc[:, topFeatureSelect(rankMI, bestNMI)]
+print("Shape of data_test_MI:", data_test_MI.shape, "which means", data_test_MI.shape[0], "examples x", data_test_MI.shape[1], "columns")
+print()
+
+treeMI = decisionTreeLearner(data_train_MI, y, bestCriterionMI, 500)
+
+labels_MI = treeMI.classes_
+pred_MI = treeMI.predict(data_test_MI)
+print("Determining confusion matrix for best configuration on feature selection ranking by Mutual Info. (Close to go ahead).")
+benchmark(y_true, pred_MI, labels_MI)
+print()
+
+# Training decision tree phase - Feature selection with PCA - first the PCA was applied to the testing dataset
+data_test_cols = list(data_test.columns.values)
+data_test_cols.remove(target)
+
+data_test_PCA = data_test.loc[:, data_test_cols]
+data_test_PCA = applyPCA(data_test_PCA, pca, pcalist)
+
+# Feature Selection was performed on the training dataset
+data_train_PCA = pcaData.loc[:, topFeatureSelect(rankPCA, bestNPCA)]
+data_test_PCA = data_test_PCA.loc[:, topFeatureSelect(rankPCA, bestNPCA)]
+print("Shape of data_train_PCA:", data_train_PCA.shape, "which means", data_train_PCA.shape[0], "examples x", data_train_PCA.shape[1], "columns")
+print()
+print("Shape of data_test_PCA:", data_test_PCA.shape, "which means", data_test_PCA.shape[0], "examples x", data_test_PCA.shape[1], "columns")
+print()
+treePCA = decisionTreeLearner(data_train_PCA, y, bestCriterionPCA, 500)
+
+labels_PCA = treePCA.classes_
+pred_PCA = treePCA.predict(data_test_PCA)
+benchmark(y_true, pred_PCA, labels_PCA)
+
+print("Running K-Means algorithm for separate samples in N clusters:")
+print()
+X_train = data.drop(target, axis = 1).values  # Remove the Class column
+y_train = data[target].values
+
+X_test = data_test.drop(target, axis = 1).values  # Remove the Class column
+y_test = data_test[target].values
+
+max_clusters = 10  # Maximum number of clusters to try
+n_init = 10  # Number of times the k-means algorithm will be run with different centroid seeds
+
+# Scale the features using MinMaxScaler
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Perform the Elbow method to determine optimal number of clusters
+inertias = []
+for num_clusters in range(1, max_clusters + 1):
+    class_assignments, inertia = assign_clusters_classes(X_train_scaled, y_train, num_clusters, n_init)
+    inertias.append(inertia)
+
+# Plot the Elbow curve
+plt.figure(1, figsize = (15, 6))
+plt.plot(range(1, max_clusters + 1), inertias, marker = 'o')
+plt.plot(range(1, max_clusters + 1), inertias, '-', alpha = 0.5)
+plt.xlabel('Number of clusters')
+plt.ylabel('Inertia')
+plt.title('Elbow curve')
+plt.show()
+
+# Calculate the best K value with the silhouette index
+num_clusters = np.arange(2, 10)
+results = {}
+for size in num_clusters:
+    model = KMeans(n_clusters=size).fit(X_train_scaled)
+    predictions = model.predict(X_train_scaled)
+    results[size] = silhouette_score(X_train_scaled, predictions)
+
+best_size = max(results, key=results.get)
+print()
+print('The best K value based on the silhouette index is: ', best_size)
+print()
+
+n_init = 10                                             # Choose the optimal number of clusters based on the Elbow curve
+optimal_num_clusters = 5                                # Choose the number based on the plot
+
+# assign clusters to classes
+class_assignments, inertia = assign_clusters_classes(X_train_scaled, y_train, optimal_num_clusters, n_init)
+
+# predict classes for testing samples
+predicted_classes = predict_the_classes(X_test_scaled, X_train_scaled, y_train, class_assignments)
+
+# benchmark predictions
+confusion_mtx, classification_rep = benchmark_predictions(y_test, predicted_classes)
+
+print("Optimal number of clusters:", optimal_num_clusters)
+print("Inertia:", inertia)
+print("\nClassification report:")
+print(classification_rep)
+
+n_init = 10
+optimal_num_clusters = 5
+
+# assign clusters to the classes
+class_assignments, inertia = assign_clusters_classes(X_train_scaled, y_train, optimal_num_clusters, n_init)
+
+# predict classes for testing samples
+predicted_classes = predict_classes_KM(X_test_scaled, X_train_scaled, class_assignments)
+
+# benchmark predictions
+confusion_mtx, classification_rep = benchmark_predictions(y_test, predicted_classes)
+
+print("Optimal number of clusters:", optimal_num_clusters)
+print("Inertia:", inertia)
+print("\nClassification report:")
+print(classification_rep)
