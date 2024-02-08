@@ -1,36 +1,28 @@
-# Data analysis and mining
-[![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/) ![Made with love in Italy](https://madewithlove.now.sh/it?colorB=%231472a4) [![MIT license](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT) [![Open Source? Yes!](https://badgen.net/badge/Open%20Source%20%3F/Yes%21/blue?icon=github)](https://github.com/Naereen/badges/)
+# Fingerprint recognition
 
-Purpose of this project involves analysis and discover of threats into data gathered from Canadian Institute for Cybersecurity (CIC).
+This repository is intended only to support my ending semester for Biometrics systems course on Msc. in Cybersecurity // University of Bari, Italy. 
 
-* Dataset is realized from Canadian Institute for Cybersecurity (CIC) - CICMalDroid 2020
-    * No. of samples are 11598
-    * Different categories of threats are adware, banking, sms malware, riskware, benign
-* Following concepts and techniques were used:
-    * Feature selection
-    * Principal Component Analysis (PCA)
-    * Stratified K-Fold cross validation
-    * Min-Max scaler
-    * Mutual information
-    * Information gain
-    * Clustering K-Means
+Credits goes to authors: kjanko (Kristijan Jankoski), ogabriel (Gabriel Oliveira), sashuu69 (Sashwat K), Utkarsh Deshmukh (https://github.com/Utkarsh-Deshmukh/Fingerprint-Enhancement-Python), R. Cappelli, M. Ferrara, A. Franco and D. Maltoni (FVC2006)  
+
+* Works through Python, SKimage and OpenCV
+    * First of all minutiae points are extracted using harris corner detection
+* Uses SIFT (ORB) go get formal descriptors around the keypoints with brute-force hamming distance
+    * Analyzes the returned matches using thresholds
 
 ## Dependencies
-* Python 3+
-* Numpy
-* pandas
-* Matplotlib
-* scikit-learn
 
-## Installation
-* Download latest version.
-* Setup your environment on PyCharm or similiar and meets requirements.
+* Python 3+
+* Numpy (numpy)
+* scikit Image (scikit-image)
+* OpenCV2 (opencv-python)
+
+## Examples
+
+* Used for almost 3000 different samples of FVC2006: the Fourth International Fingerprint Verification Competition. Just set both proper directory in the loop and the master sample
+* Otherwise you can place two fingerprint images that you want to compare inside the database folder
 
 ## Documentation
-* Full documentation is provided only on Italian (manual folder).
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for futher details.
+* Full documentation of my project in Biometric systems course is provided only on Italian (manual folder).
 
 _For any questions or doubts, feel free to contact me at gabriele.patta@outlook.com_
